@@ -1,0 +1,97 @@
+version: "3.7"
+services:
+  nginx_piranha:
+    image: nginx:1.16-alpine
+    container_name: nginx_piranha
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./api:/var/www/api
+      - ./client:/var/www/client
+      - ./docker/nginx:/etc/nginx/conf.d/
+    networks:
+      - piranha_network
+    depends_on:
+      - api_piranha
+      - client_piranha
+
+  db_piranha:
+    image: mysql:8.0.31
+    container_name: db_piranha
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: piranha_db
+      MYSQL_ROOT_PASSWORD: piranha
+      MYSQL_PASSWORD: piranha
+      MYSQL_USER: piranha
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - ./docker/db:/var/lib/mysql
+      - ./docker/mysql:/etc/mysql/conf.d
+      - ./docker/mysql/dump:/var/dump
+    networks:
+      - piranha_network
+  api_piranha:
+    build:
+      args:
+        user: ubuntu
+        uid: 1000
+      context: ./docker/php
+      dockerfile: Dockerfile
+    tty: true
+    container_name: api_piranha
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    working_dir: /var/www/api
+    volumes:
+      - ./api:/var/www/api
+      - ./docker/php/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini
+    networks:
+      - piranha_network
+    links:
+      - db_piranha
+  phpmyadmin:
+    image: phpmyadmin
+    restart: always
+    depends_on:
+      - db_piranha
+    ports:
+      - 8787:80
+    environment:
+      - PMA_ARBITRARY=1
+    networks:
+      - piranha_network
+  client_piranha:
+    image: node:18-alpine
+    container_name: client_piranha
+    tty: true
+    volumes:
+      - ./client:/client/
+    working_dir: /client
+    tmpfs:
+      - /tmp
+    environment:
+      NODE_ENV: development
+      NUXT_HOST: "0.0.0.0"
+#    command: npm run serve
+    networks:
+      - piranha_network
+    links:
+      - api_piranha
+    ports:
+      - "3000:3000"
+      - "24678:24678"
+
+volumes:
+  db_data:
+
+networks:
+  piranha_network:
+    driver: bridge
